@@ -164,7 +164,7 @@ after perl's special subroutine names (ie "DESTROY", "AUTOLOAD"), or if they
 are named after subroutines used in the module ( "getString", "getAttr",
 "_extractText", and "new" ).
 
-=head1 AUTHOR/COPYWRITE
+=head1 AUTHOR/COPYRIGHT
 
 Robert Hanson (rhanson@blast.net)
 
