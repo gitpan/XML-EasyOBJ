@@ -5,13 +5,16 @@ XML::EasyOBJ - Easy XML object navigation
 
 =head1 VERSION
 
-Version 1.10
+Version 1.12
 
 =head1 SYNOPSIS
 
  # open exisiting file
  my $doc = new XML::EasyOBJ('my_xml_document.xml');
  my $doc = new XML::EasyOBJ(-type => 'file', -param => 'my_xml_document.xml');
+
+ # create object from XML string
+ my $doc = new XML::EasyOBJ(-type => 'string', -param => $xml_source);
 
  # create new file
  my $doc = new XML::EasyOBJ(-type => 'new', -param => 'root_tag');
@@ -20,6 +23,7 @@ Version 1.10
  my $text = $doc->some_element($index)->getString;
  my $attr = $doc->some_element($index)->getAttr('foo');
  my $element = $doc->some_element($index);
+ my @elements = $doc->some_element;
 
  # first "some_element" element
  my $elements = $doc->some_element;
@@ -30,10 +34,15 @@ Version 1.10
  $doc->an_element->setString('some string')
  $doc->an_element->addString('some string')
  $doc->an_element->setAttr('attrname', 'val')
+ $doc->an_element->setAttr('attr1' => 'val', 'attr2' => 'val2')
 
  # access elements with non-name chars and the underlying DOM
  my $element = $doc->getElement('foo-bar')->getElement('bar-none');
  my $dom = $doc->foobar->getDomObj;
+
+ # get elements without specifying the element name
+ my @elements = $doc->getElement();
+ my $sixth_element = $doc->getElement('', 5);
 
  # remove elements/attrs
  $doc->remElement('tagname', $index);
@@ -47,11 +56,11 @@ Version 1.10
 =head1 DESCRIPTION
 
 I wrote XML::EasyOBJ a couple of years ago because it seemed to me
-that the DOM wasn't very "perlish".  The DOM is difficult to us
+that the DOM wasn't very "perlish" and the DOM is difficult for us
 mere mortals that don't use it on a regular basis.  As I only need
-to process XML on an occasional basis I wanted an easy way to do what
-I needed to do without having to refer back to DOM documentation and
-UML class diagrams each time.
+to process XML on an occasionally I wanted an easy way to do what
+I needed to do without having to refer back to DOM documentation
+each time.
 
 A quick fact list about XML::EasyOBJ:
 
@@ -63,6 +72,585 @@ A quick fact list about XML::EasyOBJ:
 
 XML::EasyOBJ uses XML::DOM.  XML::DOM is available from CPAN (www.cpan.org).
 
+=head1 METHODS
+
+Below is a description of the methods avialable.
+
+=cut
+
+package XML::EasyOBJ;
+
+use strict;
+use XML::DOM;
+use vars qw/$VERSION/;
+
+$VERSION = '1.12';
+
+=head2 new
+
+You can create a new object from an XML file, a string of XML, or
+a new document.  The constructor takes a set of key value pairs as
+follows:
+
+=item -type
+
+The type is either "file", "string" or "new".  "file" will create
+the object from a file source, "string" will create the object from
+a string of XML code, and "new" will create a new document object.
+
+=item -param
+
+This value depends on the -type that is passed to the constructor.
+If the -type is "file" this will be the filename to open and parse.
+If -type is "string", this is a string of XML code.  If -type is
+"new", this is the name of the root element.
+
+Creating an object from an XML file:
+
+ my $doc = new XML::EasyOBJ(-type => 'file', -param => 'my_xml_document.xml');
+
+Creating an object from a string containing the XML source:
+
+ my $doc = new XML::EasyOBJ(-type => 'string', -param => $xml_source);
+
+Creating a new XML document by passing the root tag name:
+
+ my $doc = new XML::EasyOBJ(-type => 'new', -param => 'root_tag');
+
+=item -expref
+
+Passing a value of 1 will force the expansion of references when
+grabbing string data from the XML file.  The default value is 0,
+not to expand references.
+
+
+Obtionally you may also pass the filename to open as the first
+argument instead of passing the -type and -param parameters.
+This is backwards compatable with early version of XML::EasyOBJ
+which did not handle -type and -param parameters.
+
+ my $doc = new XML::EasyOBJ('my_xml_document.xml');
+
+=cut
+
+sub new {
+    my $class = shift;
+
+    # container for DOM object
+    my $doc = '';
+
+    # expand references flag. true to expand.
+    my $expref = 0;
+
+    # if there are an odd number of parameters, take the first
+    # argument as a filename.
+    if ( scalar(@_) % 2 ) {
+	my $file = shift;
+	my $parser = new XML::DOM::Parser;
+	$doc = $parser->parsefile( $file ) || return;
+    }
+    # if there are an even number of arguments, treat them as
+    # hash name/value pairs.
+    else {
+	my %args = @_;
+
+	# check for "expand references" flag, and set $expref
+	$expref = 1 if ( exists $args{-expref} and $args{-expref} == 1 );
+
+	# create DOM from file, param is filename
+	if ( $args{-type} eq 'file' ) {
+	    my $parser = new XML::DOM::Parser;
+	    $doc = $parser->parsefile( $args{-param} ) || return;
+	}
+	# create a new DOM object, param is root element name
+	elsif ( $args{-type} eq 'new' ) {
+	    $doc = new XML::DOM::Document();
+	    $doc->appendChild( $doc->createElement( $args{-param} ) );
+	}
+	# create DOM from string
+	elsif ( $args{-type} eq 'string' ) {
+	    my $parser = new XML::DOM::Parser;
+	    $doc = $parser->parse( $args{-param} ) || return;
+	}
+	else {
+	    return;
+	}
+    }
+
+    # set method mappings, may be changed by remapMethod method
+    my %map = ( getString   => 'getString',
+		setString   => 'setString',
+		addString   => 'addString',
+		getAttr     => 'getAttr',
+		setAttr     => 'setAttr',
+		remAttr     => 'remAttr',
+		remElement  => 'remElement',
+		getElement  => 'getElement',
+		getDomObj   => 'getDomObj',
+		remapMethod => 'remapMethod',
+		getTagName  => 'getTagName',
+	      );
+
+    return bless( { 'map' => \%map,
+		    'doc' => $doc,
+		    'ptr' => $doc->getDocumentElement(),
+		    'expref' => $expref,
+		  }, 'XML::EasyOBJ::Object' );
+}
+
+package XML::EasyOBJ::Object;
+
+use strict;
+use XML::DOM;
+use vars qw/%SUBLIST %INTSUBLIST $AUTOLOAD/;
+
+$AUTOLOAD = '';
+%SUBLIST = ();
+%INTSUBLIST = ();
+
+sub DESTROY {
+    local $^W = 0;
+    my $self = $_[0];
+    $_[0] = '';
+    unless ( $_[0] ) {
+	$_[0] = $self;
+	$AUTOLOAD = 'DESTROY';
+	return AUTOLOAD( @_ );
+    }
+}
+
+sub AUTOLOAD {
+    my $funcname = $AUTOLOAD || 'AUTOLOAD';
+    $funcname =~ s/^XML::EasyOBJ::Object:://;
+    $AUTOLOAD = '';
+
+    if ( exists $_[0]->{map}->{$funcname} ) {
+	return &{$SUBLIST{$_[0]->{map}->{$funcname}}}( @_ );
+    }
+
+    my $self = shift;
+    my $index = shift;
+    my @nodes = ();
+
+    die "Fatal error: lost pointer!" unless ( exists $self->{ptr} );
+
+    for my $kid ( $self->{ptr}->getChildNodes ) {
+	if ( ( $kid->getNodeType == ELEMENT_NODE ) && ( $kid->getTagName eq $funcname ) ) {
+	    push @nodes, bless( 
+			       {	map => $self->{map}, 
+					doc => $self->{doc}, 
+					ptr => $kid,
+					expref => $self->{expref},
+			       }, 'XML::EasyOBJ::Object' );
+	}
+    }
+
+    if ( wantarray ) {
+	return @nodes;
+    }
+    else {
+	if ( defined $index ) {
+	    unless ( defined $nodes[$index] ) {
+		for ( my $i = scalar(@nodes); $i <= $index; $i++ ) {
+		    $nodes[$i] = bless(
+				       { 	map => $self->{map}, 
+						doc => $self->{doc}, 
+						ptr => &{$INTSUBLIST{'makeNewNode'}}( $self, $funcname ),
+						expref => $self->{expref},
+				       }, 'XML::EasyOBJ::Object' )
+		} 
+	    }
+	    return $nodes[$index];
+	}
+	else {
+	    return bless( 
+			 { 	map => $self->{map}, 
+				doc => $self->{doc}, 
+				ptr => &{$INTSUBLIST{'makeNewNode'}}( $self, $funcname ),
+				expref => $self->{expref},
+			 }, 'XML::EasyOBJ::Object' ) unless ( defined $nodes[0] );
+	    return $nodes[0];
+	}
+    }
+}
+
+=head2 makeNewNode( NEW_TAG )
+
+Append a new element node to the current node. Takes the tag name
+as the parameter and returns the created node as a convienence.
+
+ my $p_element = $doc->body->makeNewNode('p');
+
+=cut
+
+$INTSUBLIST{'makeNewNode'} =
+  sub {
+      my $self = shift;
+      my $element_name = shift;
+      return $self->{ptr}->appendChild( $self->{doc}->createElement($element_name) );
+  };
+
+=head2 remapMethod( CUR_METHOD, NEW_METHOD )
+
+Allows you to change the name of any of the object methods. You
+might want to do this for convienience or to avoid a naming
+collision with an element in the document.
+
+Two parameters need to be passed; the current name of the method
+and the new name. Returns 1 on a successful mapping and undef
+on failure. A failure can result if you don't pass two parameters
+if if the "copy from" method name does not exist.
+
+ $doc->remapMethod('getString', 's');
+ $doc->s();
+
+After remapping you must use the new name if you with to remap
+the method again.  You can call the remapMethod method from
+any place in the XML tree and it will always change the method
+globally.
+
+In the following example $val1 and $val2 are equal:
+
+ $doc->some_element->another_element->('getString', 's');
+ my $val1 = $doc->s();
+ $doc->remapMethod('s', 'getString');
+ my $val2 = $doc->getString();
+
+=cut
+
+$SUBLIST{remapMethod} =
+  sub {
+      my $self = shift;
+      my ( $from, $to ) = @_;
+
+      die "Fatal error: lost the pointer!" unless ( exists $self->{ptr} );
+
+      return unless ( ( $from ) && ( $to ) );
+      return unless ( exists $self->{map}->{$from} );
+
+      my $tmp = $self->{map}->{$from};
+      delete $self->{map}->{$from};
+      $self->{map}->{$to} = $tmp;
+      return 1;
+  };
+
+=head2 getString( )
+
+Recursively extracts text from the current node and all children
+element nodes. Returns the extracted text as a single scalar value.
+Expands entities based on if the -expref flag was supplied during
+object creation.
+
+=cut
+
+$SUBLIST{getString} =
+  sub {
+      my $self = shift;
+      die "Fatal error: lost the pointer!" unless ( exists $self->{ptr} );
+      my $string = &{$INTSUBLIST{extractText}}( $self->{ptr} );
+      return ( $self->{expref} ) ? $self->{doc}->expandEntityRefs($string) : $string;
+  };
+
+=head2 extractText( )
+
+Same as getString() but does not check the -expref flag.  Included for
+compatability with inital version of interface.
+
+=cut
+
+$INTSUBLIST{extractText} =
+  sub {
+      my $n = shift;
+      my $text;
+
+      if ( $n->getNodeType == TEXT_NODE ) {
+	  $text = $n->toString;
+      }
+      elsif ( $n->getNodeType == ELEMENT_NODE ) {
+	  foreach my $c ( $n->getChildNodes ) {
+	      $text .= &{$INTSUBLIST{extractText}}( $c );
+	  }
+      }
+      return $text;
+  };
+
+=head2 setString( STRING )
+
+Sets the text value of the specified element. This is done by
+first removing all text node children of the current element
+and then appending the supplied text as a new child element.
+
+Take this XML fragment and code for example:
+
+<p>This elment has <b>text</b> and <i>child</i> elements</p>
+
+ $doc->p->setString('This is the new text');
+
+This will change the fragment to this:
+
+<p><b>text</b><i>child</i>This is the new text</p>
+
+Because the <b> and <i> tags are not text nodes they are left
+unchanged, and the new text is added at the end of the specified
+element.
+
+If you need more specific control on the change you should
+either use the getDomObj() method and use the DOM methods
+directly or remove all of the child nodes and rebuild the
+<p> element from scratch.  Also see the addString() method.
+
+=cut
+
+$SUBLIST{setString} = 
+  sub {
+      my $self = shift;
+      my $text = shift;
+
+      die "Fatal error: lost the pointer!" unless ( exists $self->{ptr} );
+
+      foreach my $n ( $self->{ptr}->getChildNodes ) {
+	  if ( $n->getNodeType == TEXT_NODE ) {
+	      $self->{ptr}->removeChild( $n );
+	  }
+      }
+
+      $self->{ptr}->appendChild( $self->{doc}->createTextNode( $text ) );
+      return &{$INTSUBLIST{extractText}}( $self->{ptr} );
+  };
+
+=head2 addString( STRING )
+
+Adds to the the text value of the specified element. This
+is done by appending the supplied text as a new child element.
+
+Take this XML fragment and code for example:
+
+<p>This elment has <b>text</b></p>
+
+ $doc->p->addString(' and elements');
+
+This will change the fragment to this:
+
+<p>This elment has <b>text</b> and elements</p>
+
+=cut
+
+$SUBLIST{addString} =
+  sub {
+      my $self = shift;
+      my $text = shift;
+
+      die "Fatal error: lost the pointer!" unless ( exists $self->{ptr} );
+
+      $self->{ptr}->appendChild( $self->{doc}->createTextNode( $text ) );
+      return &{$INTSUBLIST{extractText}}( $self->{ptr} );
+  };
+
+=head2 getAttr( ATTR_NAME )
+
+Returns the value of the named attribute.
+
+ my $val = $doc->body->img->getAttr('src');
+
+=cut
+
+$SUBLIST{getAttr} = 
+  sub {
+      my $self = shift;
+      my $attr = shift;
+
+      die "Fatal error: lost the pointer!" unless( exists $self->{ptr} );
+      if ( $self->{ptr}->getNodeType == ELEMENT_NODE ) {
+	  return $self->{ptr}->getAttribute($attr);
+      }
+      return '';
+  };
+
+=head2 getTagName( )
+
+Returns the tag name of the specified element. This method is
+useful when you are enumerating child elements and do not
+know their element names.
+
+ foreach my $element ( $doc->getElement() ) {
+    print $element->getTagName();
+ }
+
+=cut
+
+$SUBLIST{getTagName} = 
+  sub {
+      my $self = shift;
+      
+      die "Fatal error: lost the pointer!" unless( exists $self->{ptr} );
+      if ( $self->{ptr}->getNodeType == ELEMENT_NODE ) {
+	  return $self->{ptr}->getTagName;
+      }
+      return '';
+  };
+
+=head2 setAttr( ATTR_NAME, ATTR_VALUE, [ATTR_NAME, ATTR_VALUE]... )
+
+For each name/value pair passed the attribute name and value will
+be set for the specified element.
+
+=cut
+
+$SUBLIST{setAttr} =
+  sub {
+      my $self = shift;
+      my %attr = @_;
+
+      die "Fatal error: lost the pointer!" unless( exists $self->{ptr} );
+      if ( $self->{ptr}->getNodeType == ELEMENT_NODE ) {
+	  if ( scalar(keys %attr) == 1 ) {
+	      for ( keys %attr ) {
+		  return $self->{ptr}->setAttribute($_, $attr{$_});
+	      }
+	  }
+	  else {
+	      for ( keys %attr ) {
+		  $self->{ptr}->setAttribute($_, $attr{$_});
+	      }
+	      return 1;
+	  }
+      }
+      return '';
+  };
+
+=head2 remAttr( ATTR_NAME )
+
+Removes the specified attribute from the current element.
+
+=cut
+
+$SUBLIST{remAttr} = 
+  sub {
+      my $self = shift;
+      my $attr = shift;
+      
+      die "Fatal error: lost the pointer!" unless( exists $self->{ptr} );
+      if ( $self->{ptr}->getNodeType == ELEMENT_NODE ) {
+	  if ( $self->{ptr}->getAttributes->getNamedItem( $attr ) ) {
+	      $self->{ptr}->getAttributes->removeNamedItem( $attr );
+	      return 1;
+	  }
+      }
+      return 0;
+  };
+
+=head2 remElement( TAG_NAME, INDEX )
+
+Removes a child element of the current element. The name of the
+child element and the index must be supplied.  An index of 0
+will remove the first occurance of the named element, 1 the second,
+2 the third, etc.
+
+=cut
+
+$SUBLIST{remElement} = 
+  sub {
+      my $self = shift;
+      my $name = shift;
+      my $index = shift;
+      
+      my $node = ( $index ) ? $self->$name($index) : $self->$name();
+      $self->{ptr}->removeChild( $node->{ptr} );
+  };
+
+=head2 getElement( TAG_NAME, INDEX )
+
+Returns the node from the tag name and index. If no index is
+given the first child with that name is returned. Use this
+method when you have element names that include characters that
+are not legal as a perl method name.  For example:
+
+ <foo> <!-- root element -->
+  <bar>
+   <foo-bar>test</foo-bar>
+  </bar>
+ </foo>
+
+ # "foo-bar" is not a legal method name
+ print $doc->bar->getElement('foo-bar')->getString();
+
+=cut
+
+$SUBLIST{getElement} = 
+  sub {
+      my $self = shift;
+      my $funcname = shift;
+      my $index = shift;
+      my @nodes = ();
+
+      die "Fatal error: lost pointer!" unless ( exists $self->{ptr} );
+
+      foreach my $kid ( $self->{ptr}->getChildNodes ) {
+	  if ( $funcname ) {
+	      if ( ( $kid->getNodeType == ELEMENT_NODE ) && ( $kid->getTagName eq $funcname ) ) {
+		  push @nodes, bless( 
+				     {	map => $self->{map}, 
+					doc => $self->{doc}, 
+					ptr => $kid,
+					expref => $self->{expref},
+				     }, 'XML::EasyOBJ::Object' );
+	      }
+	  }
+	  else {
+	      if ( $kid->getNodeType == ELEMENT_NODE ) {
+		  push @nodes, bless( 
+				     {	map => $self->{map}, 
+					doc => $self->{doc}, 
+					ptr => $kid,
+					expref => $self->{expref},
+				     }, 'XML::EasyOBJ::Object' );
+	      }
+	  }
+      }
+      
+      if ( wantarray ) {
+	  return @nodes;
+      }
+      else {
+	  $index = 0 unless ( defined $index );
+
+	  if ( defined $nodes[$index] ) {
+	      return $nodes[$index];
+	  }
+	  else {
+	      # fail if no tag name given
+	      return undef unless ( $funcname );
+
+	      for ( my $i = scalar(@nodes); $i <= $index; $i++ ) {
+		  $nodes[$i] = bless(
+				     { 	map => $self->{map}, 
+					doc => $self->{doc}, 
+					ptr => &{$INTSUBLIST{'makeNewNode'}}( $self, $funcname ),
+					expref => $self->{expref},
+				     }, 'XML::EasyOBJ::Object' )
+	      }
+
+	      return $nodes[$index];
+	  }
+      }
+  };
+
+=head1 getDomObj( )
+
+Returns the DOM object associated with the current node. This
+is useful when you need fine access via the DOM to perform
+a specific function.
+
+=cut
+
+$SUBLIST{getDomObj} = 
+  sub {
+      my $self = shift;
+      return $self->{ptr};
+  };
+
+1;
+
 =head1 BEGINNER QUICK START GUIDE
 
 =head2 Introduction
@@ -70,7 +658,7 @@ XML::EasyOBJ uses XML::DOM.  XML::DOM is available from CPAN (www.cpan.org).
 You too can write XML applications, just as long as you understand
 the basics of XML (elements and attributes). You can learn to write
 your first program that can read data from an XML file in a mere
-10 minutes. 
+10 minutes.
 
 =head2 Assumptions
 
@@ -201,319 +789,5 @@ XML::DOM
 
 =cut
 
-package XML::EasyOBJ;
-
-use strict;
-use XML::DOM;
-use vars qw/$VERSION/;
-
-$VERSION = '1.10';
-
-sub new {
-	my $class = shift;
-	my $doc = '';
-	my $expref = 0;
-	
-	if ( scalar(@_) % 2 ) {
-		my $file = shift;
-		my $parser = new XML::DOM::Parser;
-		$doc = $parser->parsefile( $file ) || return;
-	}
-	else {
-		my %args = @_;
-
-		$expref = 1 if ( exists $args{-expref} and $args{-expref} == 1 );
-				
-		if ( $args{-type} eq 'file' ) {
-			my $parser = new XML::DOM::Parser;
-			$doc = $parser->parsefile( $args{-param} ) || return;
-		}
-		elsif ( $args{-type} eq 'new' ) {
-			$doc = new XML::DOM::Document();
-			$doc->appendChild( $doc->createElement( $args{-param} ) );
-		}
-		else {
-			return;
-		}
-	}
-
-	my %map = ();
-	$map{getString}   = 'getString';
-	$map{setString}   = 'setString';
-	$map{addString}   = 'addString';
-	$map{getAttr}     = 'getAttr';
-	$map{setAttr}     = 'setAttr';
-	$map{remAttr}     = 'remAttr';
-	$map{remElement}  = 'remElement';
-	$map{getElement}  = 'getElement';
-	$map{getDomObj}   = 'getDomObj';
-	$map{remapMethod} = 'remapMethod';
-
-	return bless( 
-		{	'map' => \%map,
-			'doc' => $doc,
-			'ptr' => $doc->getDocumentElement(),
-			'expref' => $expref,
-		}, 'XML::EasyOBJ::Object' );
-}
-
-package XML::EasyOBJ::Object;
-
-use strict;
-use XML::DOM;
-use vars qw/%SUBLIST %INTSUBLIST $AUTOLOAD/;
-
-$AUTOLOAD = '';
-%SUBLIST = ();
-%INTSUBLIST = ();
-
-sub DESTROY {
-	local $^W = 0;
-	my $self = $_[0];
-	$_[0] = '';
-	unless ( $_[0] ) {
-		$_[0] = $self;
-		$AUTOLOAD = 'DESTROY';
-		return AUTOLOAD( @_ );
-	}
-}
-
-sub AUTOLOAD {
-	my $funcname = $AUTOLOAD || 'AUTOLOAD';
-	$funcname =~ s/^XML::EasyOBJ::Object:://;
-	$AUTOLOAD = '';
-
-	if ( exists $_[0]->{map}->{$funcname} ) {
-		return &{$SUBLIST{$_[0]->{map}->{$funcname}}}( @_ );
-	}
-
-	my $self = shift;
-	my $index = shift;
-	my @nodes = ();
-
-	die "Fatal error: lost pointer!" unless ( exists $self->{ptr} );
-
-	for my $kid ( $self->{ptr}->getChildNodes ) {
-		if ( ( $kid->getNodeType == ELEMENT_NODE ) && ( $kid->getTagName eq $funcname ) ) {
-			push @nodes, bless( 
-				{	map => $self->{map}, 
-					doc => $self->{doc}, 
-					ptr => $kid,
-					expref => $self->{expref},
-				}, 'XML::EasyOBJ::Object' );
-		}
-	}
-
-	if ( wantarray ) {
-		return @nodes;
-	}
-	else {
-		if ( defined $index ) {
-			unless ( defined $nodes[$index] ) {
-				for ( my $i = scalar(@nodes); $i <= $index; $i++ ) {
-					$nodes[$i] = bless(
-						{ 	map => $self->{map}, 
-							doc => $self->{doc}, 
-							ptr => &{$INTSUBLIST{'makeNewNode'}}( $self, $funcname ),
-							expref => $self->{expref},
-						}, 'XML::EasyOBJ::Object' )
-				} 
-			}
-			return $nodes[$index];
-		}
-		else {
-			return bless( 
-				{ 	map => $self->{map}, 
-					doc => $self->{doc}, 
-					ptr => &{$INTSUBLIST{'makeNewNode'}}( $self, $funcname ),
-					expref => $self->{expref},
-				}, 'XML::EasyOBJ::Object' ) unless ( defined $nodes[0] );
-			return $nodes[0];
-		}
-	}
-}
-
-
-$INTSUBLIST{'makeNewNode'} =
-	sub {
-		my $self = shift;
-		my $funcname = shift;
-		return $self->{ptr}->appendChild( $self->{doc}->createElement($funcname) );
-	};
-
-$INTSUBLIST{extractText} =
-	sub {
-		my $n = shift;
-		my $text;
-
-		if ( $n->getNodeType == TEXT_NODE ) {
-			$text = $n->toString;
-		}
-		elsif ( $n->getNodeType == ELEMENT_NODE ) {
-			foreach my $c ( $n->getChildNodes ) {
-				$text .= &{$INTSUBLIST{extractText}}( $c );
-			}
-		}
-		return $text;
-	};
-
-$SUBLIST{remapMethod} =
-	sub {
-		my $self = shift;
-		my ( $from, $to ) = @_;
-		
-		die "Fatal error: lost the pointer!" unless ( exists $self->{ptr} );
-		
-		return unless ( ( $from ) && ( $to ) );
-		return unless ( exists $self->{map}->{$from} );
-		
-		my $tmp = $self->{map}->{$from};
-		delete $self->{map}->{$from};
-		$self->{map}->{$to} = $tmp;
-		return 1;
-	};
-
-$SUBLIST{getString} =
-	sub {
-		my $self = shift;
-		die "Fatal error: lost the pointer!" unless ( exists $self->{ptr} );
-		my $string = &{$INTSUBLIST{extractText}}( $self->{ptr} );
-		return ( $self->{expref} ) ? $self->{doc}->expandEntityRefs($string) : $string;
-	};
-
-$SUBLIST{setString} = 
-	sub {
-		my $self = shift;
-		my $text = shift;
-	
-		die "Fatal error: lost the pointer!" unless ( exists $self->{ptr} );
-	
-		foreach my $n ( $self->{ptr}->getChildNodes ) {
-			if ( $n->getNodeType == TEXT_NODE ) {
-				$self->{ptr}->removeChild( $n );
-			}
-		}
-	
-		$self->{ptr}->appendChild( $self->{doc}->createTextNode( $text ) );
-		return &{$INTSUBLIST{extractText}}( $self->{ptr} );
-	};
-
-$SUBLIST{addString} =
-	sub {
-		my $self = shift;
-		my $text = shift;
-	
-		die "Fatal error: lost the pointer!" unless ( exists $self->{ptr} );
-	
-		$self->{ptr}->appendChild( $self->{doc}->createTextNode( $text ) );
-		return &{$INTSUBLIST{extractText}}( $self->{ptr} );
-	};
-
-$SUBLIST{getAttr} = 
-	sub {
-		my $self = shift;
-		my $attr = shift;
-	
-		die "Fatal error: lost the pointer!" unless( exists $self->{ptr} );
-		if ( $self->{ptr}->getNodeType == ELEMENT_NODE ) {
-			return $self->{ptr}->getAttribute($attr);
-		}
-		return '';
-	};
-
-$SUBLIST{setAttr} =
-	sub {
-		my $self = shift;
-		my $attr = shift;
-		my $text = shift;
-	
-		die "Fatal error: lost the pointer!" unless( exists $self->{ptr} );
-		if ( $self->{ptr}->getNodeType == ELEMENT_NODE ) {
-			return $self->{ptr}->setAttribute($attr, $text);
-		}
-		return '';
-	};
-
-$SUBLIST{remAttr} = 
-	sub {
-		my $self = shift;
-		my $attr = shift;
-	
-		die "Fatal error: lost the pointer!" unless( exists $self->{ptr} );
-		if ( $self->{ptr}->getNodeType == ELEMENT_NODE ) {
-			if ( $self->{ptr}->getAttributes->getNamedItem( $attr ) ) {
-				$self->{ptr}->getAttributes->removeNamedItem( $attr );
-				return 1;
-			}
-		}
-		return 0;
-	};
-
-$SUBLIST{remElement} = 
-	sub {
-		my $self = shift;
-		my $name = shift;
-		my $index = shift;
-
-		my $node = ( $index ) ? $self->$name($index) : $self->$name();
-		$self->{ptr}->removeChild( $node->{ptr} );
-	};
-
-$SUBLIST{getElement} = 
-	sub {
-		my $self = shift;
-		my $funcname = shift;
-		my $index = shift;
-		my @nodes = ();
-
-		die "Fatal error: lost pointer!" unless ( exists $self->{ptr} );
-
-		for my $kid ( $self->{ptr}->getChildNodes ) {
-			if ( ( $kid->getNodeType == ELEMENT_NODE ) && ( $kid->getTagName eq $funcname ) ) {
-				push @nodes, bless( 
-					{	map => $self->{map}, 
-						doc => $self->{doc}, 
-						ptr => $kid,
-						expref => $self->{expref},
-					}, 'XML::EasyOBJ::Object' );
-			}
-		}
-
-		if ( wantarray ) {
-			return @nodes;
-		}
-		else {
-			if ( defined $index ) {
-				unless ( defined $nodes[$index] ) {
-					for ( my $i = scalar(@nodes); $i <= $index; $i++ ) {
-						$nodes[$i] = bless(
-							{ 	map => $self->{map}, 
-								doc => $self->{doc}, 
-								ptr => &{$INTSUBLIST{'makeNewNode'}}( $self, $funcname ),
-								expref => $self->{expref},
-							}, 'XML::EasyOBJ::Object' )
-					} 
-				}
-				return $nodes[$index];
-			}
-			else {
-				return bless( 
-					{ 	map => $self->{map}, 
-						doc => $self->{doc}, 
-						ptr => &{$INTSUBLIST{'makeNewNode'}}( $self, $funcname ),
-						expref => $self->{expref},
-					}, 'XML::EasyOBJ::Object' ) unless ( defined $nodes[0] );
-				return $nodes[0];
-			}
-		}
-	};
-
-$SUBLIST{getDomObj} = 
-	sub {
-		my $self = shift;
-		return $self->{ptr};
-	};
-
-1;
 
 

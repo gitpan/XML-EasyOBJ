@@ -7,3 +7,5 @@ t/read.t
 t/read.xml
 t/write.t
 t/synop.t
+t/elements.t
+t/string.t
