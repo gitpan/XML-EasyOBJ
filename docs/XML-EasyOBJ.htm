@@ -1,0 +1,308 @@
+<HTML>
+<HEAD>
+<TITLE>XML::EasyOBJ - Easy XML object navigation</TITLE>
+<LINK REV="made" HREF="mailto:">
+</HEAD>
+
+<BODY>
+
+<!-- INDEX BEGIN -->
+
+<UL>
+
+	<LI><A HREF="#NAME">NAME</A></LI>
+	<LI><A HREF="#VERSION">VERSION</A></LI>
+	<LI><A HREF="#SYNOPSIS">SYNOPSIS</A></LI>
+	<LI><A HREF="#DESCRIPTION">DESCRIPTION</A></LI>
+	<LI><A HREF="#REQUIREMENTS">REQUIREMENTS</A></LI>
+	<LI><A HREF="#QUICK_START_GUIDE">QUICK START GUIDE</A></LI>
+	<UL>
+
+		<LI><A HREF="#Introduction">Introduction</A></LI>
+		<LI><A HREF="#Assumptions">Assumptions</A></LI>
+		<LI><A HREF="#Loading_the_XML_document">Loading the XML document</A></LI>
+		<LI><A HREF="#Reading_text_with_getString">Reading text with getString</A></LI>
+		<LI><A HREF="#Reading_XML_attributes_with_getA">Reading XML attributes with getAttr</A></LI>
+		<LI><A HREF="#Looping_through_elements">Looping through elements</A></LI>
+		<LI><A HREF="#That_s_it_">That's it!</A></LI>
+	</UL>
+
+	<LI><A HREF="#PROGRAMMING_NOTES">PROGRAMMING NOTES</A></LI>
+	<LI><A HREF="#AUTHOR_COPYWRITE">AUTHOR/COPYWRITE</A></LI>
+	<LI><A HREF="#SEE_ALSO">SEE ALSO</A></LI>
+</UL>
+<!-- INDEX END -->
+
+<HR>
+<P>
+<H1><A NAME="NAME">NAME</A></H1>
+<P>
+XML::EasyOBJ - Easy XML object navigation
+
+</P>
+<P>
+<HR>
+<H1><A NAME="VERSION">VERSION</A></H1>
+<P>
+Version 1.0
+
+</P>
+<P>
+<HR>
+<H1><A NAME="SYNOPSIS">SYNOPSIS</A></H1>
+<P>
+<PRE> # create the object
+ my $doc = new XML::EasyOBJ('my_xml_document.xml');
+</PRE>
+</P>
+<P>
+<PRE> # print some text from the document
+ print $doc-&gt;some_element(1)-&gt;getString;
+</PRE>
+</P>
+<P>
+<PRE> # print an attribute value
+ print $doc-&gt;some_element(0)-&gt;getAttr('foo').&quot;\n&quot;;
+</PRE>
+</P>
+<P>
+<PRE> # iterate over a list of elements
+ foreach my $x ( $foo-&gt;some_element ) {
+   print $x-&gt;getString.&quot;\n&quot;;
+   }
+</PRE>
+</P>
+<P>
+<HR>
+<H1><A NAME="DESCRIPTION">DESCRIPTION</A></H1>
+<P>
+XML::EasyOBJ lets you take an XML page and essentially create an object out
+of it. Each element becomes a method, which makes it really easy to
+navigate an XML page (if you know the structure). The motivation behind
+this module was to create an interface so simple that anyone who knows the
+basic functionality of Perl can learn how to read data from an XML document
+in less than 10 minutes (well, that and the fact that my modules haven't
+been mentioned in TPJ yet, and maybe this one will :).
+
+</P>
+<P>
+This module is also a time saver even if you are familiar with the other
+modules available, but want something simple so that you can throw together
+a script in a few minutes (unless of course you know the DOM like the back
+of your hand).
+
+</P>
+<P>
+<HR>
+<H1><A NAME="REQUIREMENTS">REQUIREMENTS</A></H1>
+<P>
+XML::EasyOBJ uses XML::DOM. XML::DOM is available from CPAN (www.cpan.org).
+
+</P>
+<P>
+<HR>
+<H1><A NAME="QUICK_START_GUIDE">QUICK START GUIDE</A></H1>
+<P>
+<HR>
+<H2><A NAME="Introduction">Introduction</A></H2>
+<P>
+Even if you have never used any XML module, just as long as you understand
+the basics of XML (elements and attributes), you can learn to write a
+program that can read data from an XML file in 10 minutes. ...Well maybe 30
+minutes if you are a slow reader like I am.
+
+</P>
+<P>
+<HR>
+<H2><A NAME="Assumptions">Assumptions</A></H2>
+<P>
+It is assumed that you are familiar with the structure of the document that
+you are reading. Next, you must know the basics of perl lists, loops, and
+how to call a function. You must also have an XML document to read.
+
+</P>
+<P>
+Simple eh?
+
+</P>
+<P>
+<HR>
+<H2><A NAME="Loading_the_XML_document">Loading the XML document</A></H2>
+<P>
+<PRE> use XML::EasyOBJ;
+ my $doc = new XML::EasyOBJ('my_xml_document.xml') || die &quot;Can't make object&quot;;
+</PRE>
+</P>
+<P>
+Replace the string ``my_xml_document.xml'' with the name of your XML
+document. If the document is in another directory you will need to specify
+the path to it as well.
+
+</P>
+<P>
+The variable <CODE>$doc</CODE> is an object, and represents our root XML
+element in the document.
+
+</P>
+<P>
+<HR>
+<H2><A NAME="Reading_text_with_getString">Reading text with getString</A></H2>
+<P>
+Each element becomes an object. So lets assume that the XML page looks like
+this:
+
+</P>
+<P>
+<PRE> &lt;table&gt;
+  &lt;record&gt;
+   &lt;rec2 foo=&quot;bar&quot;&gt;
+    &lt;field1&gt;field1a&lt;/field1&gt;
+    &lt;field2&gt;field2b&lt;/field2&gt;
+    &lt;field3&gt;field3c&lt;/field3&gt;
+   &lt;/rec2&gt;
+   &lt;rec2 foo=&quot;baz&quot;&gt;
+    &lt;field1&gt;field1d&lt;/field1&gt;
+    &lt;field2&gt;field2e&lt;/field2&gt;
+    &lt;field3&gt;field3f&lt;/field3&gt;
+   &lt;/rec2&gt;
+  &lt;/record&gt;
+ &lt;/table&gt;
+</PRE>
+</P>
+<P>
+As mentioned in he last step, the <CODE>$doc</CODE> object is the root
+element of the XML page. In this case the root element is the ``table''
+element.
+
+</P>
+<P>
+To read the text of any field is as easy as navigating the XML elements.
+For example, lets say that we want to retrieve the text ``field2e''. This
+text is in the ``field2'' element of the SECOND ``rec2'' element, which is
+in the FIRST ``record'' element.
+
+</P>
+<P>
+So the code to print that value it looks like this:
+
+</P>
+<P>
+<PRE> print $doc-&gt;record(0)-&gt;rec2(1)-&gt;field2-&gt;getString;
+</PRE>
+</P>
+<P>
+The ``getString'' method returns the text within an element.
+
+</P>
+<P>
+We can also break it down like this:
+
+</P>
+<P>
+<PRE> # grab the FIRST &quot;record&quot; element (index starts at 0)
+ my $record = $doc-&gt;record(0);
+ 
+ # grab the SECOND &quot;rec2&quot; element within $record
+ my $rec2 = $record-&gt;rec2(1);
+ 
+ # grab the &quot;field2&quot; element from $rec2
+ # NOTE: If you don't specify an index, the first item 
+ #       is returned and in this case there is only 1.
+ my $field2 = $rec2-&gt;field2;
+</PRE>
+</P>
+<P>
+<PRE> # print the text
+ print $field2-&gt;getString;
+</PRE>
+</P>
+<P>
+<HR>
+<H2><A NAME="Reading_XML_attributes_with_getA">Reading XML attributes with getAttr</A></H2>
+<P>
+Looking at the example in the previous step, can you guess what this code
+will print?
+
+</P>
+<P>
+<PRE> $doc-&gt;record(0)-&gt;rec2(0)-&gt;getAttr('foo');
+ $doc-&gt;record(0)-&gt;rec2(1)-&gt;getAttr('foo');
+</PRE>
+</P>
+<P>
+If you couldn't guess, they will print out the value of the ``foo''
+attribute of the first and second rec2 elements. 
+
+</P>
+<P>
+<HR>
+<H2><A NAME="Looping_through_elements">Looping through elements</A></H2>
+<P>
+Lets take our example in the previous step where we printed the attribute
+values and rewrite it to use a loop. This will allow it to print all of the
+``foo'' attributes no matter how many ``rec2'' elements we have.
+
+</P>
+<P>
+<PRE> foreach my $rec2 ( $doc-&gt;record(0)-&gt;rec2 ) {
+   print $rec2-&gt;getAttr('foo');
+        }
+</PRE>
+</P>
+<P>
+When we call $doc-&gt;record(0)-&gt;rec2 this way, the module will return a
+list of ``rec2'' elements.
+
+</P>
+<P>
+<HR>
+<H2><A NAME="That_s_it_">That's it!</A></H2>
+<P>
+You are now an XML programmer! <CODE>*start</CODE> rejoicing now*
+
+</P>
+<P>
+<HR>
+<H1><A NAME="PROGRAMMING_NOTES">PROGRAMMING NOTES</A></H1>
+<P>
+When creating a new instance of XML::EasyOBJ it will return an object
+reference on success, or undef on failure. Besides that, ALL methods will
+always return a value. This means that if you specify an element that does
+not exist, it will still return an object reference. This is just another
+way to lower the bar, and make this module easier to use.
+
+</P>
+<P>
+You will run into problems if you have XML tags which are named after
+perl's special subroutine names (ie ``DESTROY'', ``AUTOLOAD''), or if they
+are named after subroutines used in the module ( ``getString'',
+``getAttr'', ``_extractText'', and ``new'' ).
+
+</P>
+<P>
+<HR>
+<H1><A NAME="AUTHOR_COPYWRITE">AUTHOR/COPYWRITE</A></H1>
+<P>
+Robert Hanson (<A HREF="mailto:rhanson@blast.net">rhanson@blast.net</A>)
+
+</P>
+<P>
+Copyright 2000, Robert Hanson. All rights reserved. 
+
+</P>
+<P>
+This library is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself. 
+
+</P>
+<P>
+<HR>
+<H1><A NAME="SEE_ALSO">SEE ALSO</A></H1>
+<P>
+XML::DOM
+
+</P>
+
+</BODY>
+
+</HTML>

@@ -1,0 +1,10 @@
+
+This module installs in the normal way...
+
+perl Makefile.pl
+make
+make install
+
+There is a sample in the sample directory (which is also
+in the docs), and the HTML version of the POD in the docs
+folder.
